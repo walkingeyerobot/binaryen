@@ -3004,7 +3004,7 @@ static void validateExports(Module& module, ValidationInfo& info) {
                         name,
                         "module table exports must be found");
     } else if (exp->kind == ExternalKind::Memory) {
-      info.shouldBeTrue(name == Name("0") || name == module.memory.name,
+      info.shouldBeTrue(module.getTableOrNull(name),
                         name,
                         "module memory exports must be found");
     } else if (exp->kind == ExternalKind::Tag) {
@@ -3045,78 +3045,85 @@ static void validateGlobals(Module& module, ValidationInfo& info) {
   });
 }
 
-static void validateMemory(Module& module, ValidationInfo& info) {
-  auto& curr = module.memory;
-  info.shouldBeFalse(
-    curr.initial > curr.max, "memory", "memory max >= initial");
-  if (curr.is64()) {
-    info.shouldBeTrue(module.features.hasMemory64(),
+static void validateMemories(Module& module, ValidationInfo& info) {
+  if (!module.features.hasReferenceTypes()) {
+    info.shouldBeTrue(module.memories.size() <= 1,
                       "memory",
-                      "memory is 64-bit, but memory64 is disabled");
-  } else {
-    info.shouldBeTrue(curr.initial <= Memory::kMaxSize32,
-                      "memory",
-                      "initial memory must be <= 4GB");
-    info.shouldBeTrue(!curr.hasMax() || curr.max <= Memory::kMaxSize32,
-                      "memory",
-                      "max memory must be <= 4GB, or unlimited");
+                      "Only 1 memory definition allowed in MVP (requires "
+                      "--enable-reference-types)");
   }
-  info.shouldBeTrue(!curr.shared || curr.hasMax(),
-                    "memory",
-                    "shared memory must have max size");
-  if (curr.shared) {
-    info.shouldBeTrue(module.features.hasAtomics(),
-                      "memory",
-                      "memory is shared, but atomics are disabled");
-  }
-  for (auto& segment : curr.segments) {
-    auto size = segment.data.size();
-    if (segment.isPassive) {
-      info.shouldBeTrue(module.features.hasBulkMemory(),
-                        segment.offset,
-                        "nonzero segment flags (bulk memory is disabled)");
-      info.shouldBeEqual(segment.offset,
-                         (Expression*)nullptr,
-                         segment.offset,
-                         "passive segment should not have an offset");
+  for (auto& curr : module.memories) {
+    info.shouldBeFalse(curr->initial > curr->max,
+                       "memory", "memory max >= initial");
+    if (curr->is64()) {
+      info.shouldBeTrue(module.features.hasMemory64(),
+                        "memory",
+                        "memory is 64-bit, but memory64 is disabled");
     } else {
-      if (curr.is64()) {
-        if (!info.shouldBeEqual(segment.offset->type,
-                                Type(Type::i64),
-                                segment.offset,
-                                "segment offset should be i64")) {
-          continue;
-        }
-      } else {
-        if (!info.shouldBeEqual(segment.offset->type,
-                                Type(Type::i32),
-                                segment.offset,
-                                "segment offset should be i32")) {
-          continue;
-        }
-      }
-      info.shouldBeTrue(checkSegmentOffset(segment.offset,
-                                           segment.data.size(),
-                                           curr.initial * Memory::kPageSize,
-                                           module.features),
-                        segment.offset,
-                        "memory segment offset should be reasonable");
-      if (segment.offset->is<Const>()) {
-        auto start = segment.offset->cast<Const>()->value.getUnsigned();
-        auto end = start + size;
-        info.shouldBeTrue(end <= curr.initial * Memory::kPageSize,
-                          segment.data.size(),
-                          "segment size should fit in memory (end)");
-      }
-      FunctionValidator(module, &info).validate(segment.offset);
+      info.shouldBeTrue(curr->initial <= Memory::kMaxSize32,
+                        "memory",
+                        "initial memory must be <= 4GB");
+      info.shouldBeTrue(!curr->hasMax() || curr->max <= Memory::kMaxSize32,
+                        "memory",
+                        "max memory must be <= 4GB, or unlimited");
     }
-    // If the memory is imported we don't actually know its initial size.
-    // Specifically wasm dll's import a zero sized memory which is perfectly
-    // valid.
-    if (!curr.imported()) {
-      info.shouldBeTrue(size <= curr.initial * Memory::kPageSize,
-                        segment.data.size(),
-                        "segment size should fit in memory (initial)");
+    info.shouldBeTrue(!curr->shared || curr->hasMax(),
+                      "memory",
+                      "shared memory must have max size");
+    if (curr->shared) {
+      info.shouldBeTrue(module.features.hasAtomics(),
+                        "memory",
+                        "memory is shared, but atomics are disabled");
+    }
+    for (auto& segment : curr->segments) {
+      auto size = segment.data.size();
+      if (segment.isPassive) {
+        info.shouldBeTrue(module.features.hasBulkMemory(),
+                          segment.offset,
+                          "nonzero segment flags (bulk memory is disabled)");
+        info.shouldBeEqual(segment.offset,
+                          (Expression*)nullptr,
+                          segment.offset,
+                          "passive segment should not have an offset");
+      } else {
+        if (curr->is64()) {
+          if (!info.shouldBeEqual(segment.offset->type,
+                                  Type(Type::i64),
+                                  segment.offset,
+                                  "segment offset should be i64")) {
+            continue;
+          }
+        } else {
+          if (!info.shouldBeEqual(segment.offset->type,
+                                  Type(Type::i32),
+                                  segment.offset,
+                                  "segment offset should be i32")) {
+            continue;
+          }
+        }
+        info.shouldBeTrue(checkSegmentOffset(segment.offset,
+                                            segment.data.size(),
+                                            curr->initial * Memory::kPageSize,
+                                            module.features),
+                          segment.offset,
+                          "memory segment offset should be reasonable");
+        if (segment.offset->is<Const>()) {
+          auto start = segment.offset->cast<Const>()->value.getUnsigned();
+          auto end = start + size;
+          info.shouldBeTrue(end <= curr->initial * Memory::kPageSize,
+                            segment.data.size(),
+                            "segment size should fit in memory (end)");
+        }
+        FunctionValidator(module, &info).validate(segment.offset);
+      }
+      // If the memory is imported we don't actually know its initial size.
+      // Specifically wasm dll's import a zero sized memory which is perfectly
+      // valid.
+      if (!curr->imported()) {
+        info.shouldBeTrue(size <= curr->initial * Memory::kPageSize,
+                          segment.data.size(),
+                          "segment size should fit in memory (initial)");
+      }
     }
   }
 }
@@ -3313,7 +3320,7 @@ bool WasmValidator::validate(Module& module, Flags flags) {
     validateImports(module, info);
     validateExports(module, info);
     validateGlobals(module, info);
-    validateMemory(module, info);
+    validateMemories(module, info);
     validateTables(module, info);
     validateTags(module, info);
     validateModule(module, info);

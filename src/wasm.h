@@ -1899,7 +1899,6 @@ public:
     }
   };
 
-  bool exists = false;
   Address initial = 0; // sizes are in pages
   Address max = kMaxSize32;
   std::vector<Segment> segments;
@@ -1907,11 +1906,9 @@ public:
   bool shared = false;
   Type indexType = Type::i32;
 
-  Memory() { name = Name::fromInt(0); }
   bool hasMax() { return max != kUnlimitedSize; }
   bool is64() { return indexType == Type::i64; }
   void clear() {
-    exists = false;
     name = "";
     initial = 0;
     max = kMaxSize32;
@@ -1959,9 +1956,9 @@ public:
   std::vector<std::unique_ptr<Global>> globals;
   std::vector<std::unique_ptr<Tag>> tags;
   std::vector<std::unique_ptr<ElementSegment>> elementSegments;
+  std::vector<std::unique_ptr<Memory>> memories;
   std::vector<std::unique_ptr<Table>> tables;
 
-  Memory memory;
   Name start;
 
   std::vector<UserSection> userSections;
@@ -1992,6 +1989,7 @@ private:
   // exports map is by the *exported* name, which is unique
   std::unordered_map<Name, Export*> exportsMap;
   std::unordered_map<Name, Function*> functionsMap;
+  std::unordered_map<Name, Memory*> memoriesMap;
   std::unordered_map<Name, Table*> tablesMap;
   std::unordered_map<Name, ElementSegment*> elementSegmentsMap;
   std::unordered_map<Name, Global*> globalsMap;
@@ -2002,12 +2000,14 @@ public:
 
   Export* getExport(Name name);
   Function* getFunction(Name name);
+  Memory* getMemory(Name name);
   Table* getTable(Name name);
   ElementSegment* getElementSegment(Name name);
   Global* getGlobal(Name name);
   Tag* getTag(Name name);
 
   Export* getExportOrNull(Name name);
+  Memory* getMemoryOrNull(Name name);
   Table* getTableOrNull(Name name);
   ElementSegment* getElementSegmentOrNull(Name name);
   Function* getFunctionOrNull(Name name);
@@ -2021,6 +2021,7 @@ public:
 
   Export* addExport(std::unique_ptr<Export>&& curr);
   Function* addFunction(std::unique_ptr<Function>&& curr);
+  Memory* addMemory(std::unique_ptr<Memory>&& curr);
   Table* addTable(std::unique_ptr<Table>&& curr);
   ElementSegment* addElementSegment(std::unique_ptr<ElementSegment>&& curr);
   Global* addGlobal(std::unique_ptr<Global>&& curr);
@@ -2030,6 +2031,7 @@ public:
 
   void removeExport(Name name);
   void removeFunction(Name name);
+  void removeMemory(Name name);
   void removeTable(Name name);
   void removeElementSegment(Name name);
   void removeGlobal(Name name);
@@ -2037,6 +2039,7 @@ public:
 
   void removeExports(std::function<bool(Export*)> pred);
   void removeFunctions(std::function<bool(Function*)> pred);
+  void removeMemories(std::function<bool(Function*)> pred);
   void removeTables(std::function<bool(Table*)> pred);
   void removeElementSegments(std::function<bool(ElementSegment*)> pred);
   void removeGlobals(std::function<bool(Global*)> pred);

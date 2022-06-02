@@ -1267,6 +1267,10 @@ Function* Module::getFunction(Name name) {
   return getModuleElement(functionsMap, name, "getFunction");
 }
 
+Memory* Module::getMemory(Name name) {
+  return getModuleElement(memoriesMap, name, "getMemory");
+}
+
 Table* Module::getTable(Name name) {
   return getModuleElement(tablesMap, name, "getTable");
 }
@@ -1298,6 +1302,10 @@ Export* Module::getExportOrNull(Name name) {
 
 Function* Module::getFunctionOrNull(Name name) {
   return getModuleElementOrNull(functionsMap, name);
+}
+
+Memory* Module::getMemoryOrNull(Name name) {
+  return getModuleElementOrNull(memoriesMap, name);
 }
 
 Table* Module::getTableOrNull(Name name) {
@@ -1373,6 +1381,10 @@ Function* Module::addFunction(std::unique_ptr<Function>&& curr) {
     functions, functionsMap, std::move(curr), "addFunction");
 }
 
+Memory* Module::addMemory(std::unique_ptr<Table>&& curr) {
+  return addModuleElement(memories, memoriesMap, std::move(curr), "addMemory");
+}
+
 Table* Module::addTable(std::unique_ptr<Table>&& curr) {
   return addModuleElement(tables, tablesMap, std::move(curr), "addTable");
 }
@@ -1410,6 +1422,9 @@ void Module::removeExport(Name name) {
 void Module::removeFunction(Name name) {
   removeModuleElement(functions, functionsMap, name);
 }
+void Module::removeMemory(Name name) {
+  removeModuleElement(memories, memoriesMap, name);
+}
 void Module::removeTable(Name name) {
   removeModuleElement(tables, tablesMap, name);
 }
@@ -1443,6 +1458,9 @@ void Module::removeExports(std::function<bool(Export*)> pred) {
 void Module::removeFunctions(std::function<bool(Function*)> pred) {
   removeModuleElements(functions, functionsMap, pred);
 }
+void Module::removeMemories(std::function<bool(Memory*)> pred) {
+  removeModuleElements(memories, memoriesMap, pred);
+}
 void Module::removeTables(std::function<bool(Table*)> pred) {
   removeModuleElements(tables, tablesMap, pred);
 }
@@ -1464,6 +1482,10 @@ void Module::updateMaps() {
   exportsMap.clear();
   for (auto& curr : exports) {
     exportsMap[curr->name] = curr.get();
+  }
+  memoriesMap.clear();
+  for (auto& curr : memories) {
+    memoriesMap[curr->name] = curr.get();
   }
   tablesMap.clear();
   for (auto& curr : tables) {

@@ -254,7 +254,9 @@ struct Walker : public VisitorType {
     for (auto& curr : module->elementSegments) {
       self->walkElementSegment(curr.get());
     }
-    self->walkMemory(&module->memory);
+    for (auto& curr : module->memories) {
+      self->walkMemory(curr.get());
+    }
   }
 
   // Walks module-level code, that is, code that is not in functions.
