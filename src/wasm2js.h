@@ -94,16 +94,18 @@ bool isTableExported(Module& wasm) {
 }
 
 bool hasActiveSegments(Module& wasm) {
-  for (Index i = 0; i < wasm.memory.segments.size(); i++) {
-    if (!wasm.memory.segments[i].isPassive) {
-      return true;
+  for (auto& memory : wasm.memories) { 
+    for (auto& segment : memory->segments) {
+      if (!segment.isPassive) {
+        return true;
+      }
     }
   }
   return false;
 }
 
 bool needsBufferView(Module& wasm) {
-  if (!wasm.memory.exists) {
+  if (wasm.memories.empty()) {
     return false;
   }
 
@@ -414,46 +416,48 @@ Ref Wasm2JSBuilder::processWasm(Module* wasm, Name funcName) {
   ValueBuilder::appendArgumentToFunction(asmFunc, ENV);
 
   // add memory import
-  if (wasm->memory.exists) {
-    if (wasm->memory.imported()) {
-      // find memory and buffer in imports
-      Ref theVar = ValueBuilder::makeVar();
-      asmFunc[3]->push_back(theVar);
-      ValueBuilder::appendToVar(
-        theVar,
-        "memory",
-        ValueBuilder::makeDot(ValueBuilder::makeName(ENV),
-                              ValueBuilder::makeName(wasm->memory.base)));
+  if (!wasm.memories.empty()) {
+    for (auto& memory : wasm.memories) {
+      if (memory.imported()) {
+        // find memory and buffer in imports
+        Ref theVar = ValueBuilder::makeVar();
+        asmFunc[3]->push_back(theVar);
+        ValueBuilder::appendToVar(
+          theVar,
+          "memory",
+          ValueBuilder::makeDot(ValueBuilder::makeName(ENV),
+                                ValueBuilder::makeName(memory->base)));
 
-      // Assign `buffer = memory.buffer`
-      Ref buf = ValueBuilder::makeVar();
-      asmFunc[3]->push_back(buf);
-      ValueBuilder::appendToVar(
-        buf,
-        BUFFER,
-        ValueBuilder::makeDot(ValueBuilder::makeName("memory"),
-                              ValueBuilder::makeName("buffer")));
+        // Assign `buffer = memory.buffer`
+        Ref buf = ValueBuilder::makeVar();
+        asmFunc[3]->push_back(buf);
+        ValueBuilder::appendToVar(
+          buf,
+          BUFFER,
+          ValueBuilder::makeDot(ValueBuilder::makeName("memory"),
+                                ValueBuilder::makeName("buffer")));
 
-      // If memory is growable, override the imported memory's grow method to
-      // ensure so that when grow is called from the output it works as expected
-      if (wasm->memory.max > wasm->memory.initial) {
-        asmFunc[3]->push_back(
-          ValueBuilder::makeStatement(ValueBuilder::makeBinary(
-            ValueBuilder::makeDot(ValueBuilder::makeName("memory"),
-                                  ValueBuilder::makeName("grow")),
-            SET,
-            ValueBuilder::makeName(WASM_MEMORY_GROW))));
+        // If memory is growable, override the imported memory's grow method to
+        // ensure so that when grow is called from the output it works as expected
+        if (memory->max > memory->initial) {
+          asmFunc[3]->push_back(
+            ValueBuilder::makeStatement(ValueBuilder::makeBinary(
+              ValueBuilder::makeDot(ValueBuilder::makeName("memory"),
+                                    ValueBuilder::makeName("grow")),
+              SET,
+              ValueBuilder::makeName(WASM_MEMORY_GROW))));
+        }
+      } else {
+        Ref theVar = ValueBuilder::makeVar();
+        asmFunc[3]->push_back(theVar);
+        ValueBuilder::appendToVar(
+          theVar,
+          BUFFER,
+          ValueBuilder::makeNew(ValueBuilder::makeCall(
+            ValueBuilder::makeName("ArrayBuffer"),
+            ValueBuilder::makeInt(Address::address32_t(memory.initial.addr *
+                                                       Memory::kPageSize)))));
       }
-    } else {
-      Ref theVar = ValueBuilder::makeVar();
-      asmFunc[3]->push_back(theVar);
-      ValueBuilder::appendToVar(
-        theVar,
-        BUFFER,
-        ValueBuilder::makeNew(ValueBuilder::makeCall(
-          ValueBuilder::makeName("ArrayBuffer"),
-          ValueBuilder::makeInt(Address::address32_t(wasm->memory.initial.addr *
-                                                     Memory::kPageSize)))));
     }
   }
 
@@ -536,7 +540,7 @@ Ref Wasm2JSBuilder::processWasm(Module* wasm, Name funcName) {
 }
 
 void Wasm2JSBuilder::addBasics(Ref ast, Module* wasm) {
-  if (wasm->memory.exists) {
+  if (!wasm->memories.empty()) {
     // heaps, var HEAP8 = new global.Int8Array(buffer); etc
     auto addHeap = [&](IString name, IString view) {
       Ref theVar = ValueBuilder::makeVar();
@@ -805,7 +809,7 @@ void Wasm2JSBuilder::addExports(Ref ast, Module* wasm) {
         Fatal() << "unsupported export type: " << export_->name << "\n";
     }
   }
-  if (wasm->memory.exists) {
+  if (!wasm->memories.empty()) {
     addMemoryFuncs(ast, wasm);
   }
   ast->push_back(
